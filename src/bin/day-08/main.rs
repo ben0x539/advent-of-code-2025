@@ -1,25 +1,17 @@
-use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::BufRead;
 use std::io::BufReader;
-use std::mem;
 use std::path::Path;
-use std::rc::Rc;
 
 use anyhow::Result;
 use anyhow::bail;
 
 type Xyz = (i64, i64, i64);
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-struct Circuit {
-    box_ids: Vec<usize>,
-}
-
 struct JunctionBox {
     pos: Xyz,
-    circuit: Rc<RefCell<Circuit>>,
+    circuit: usize,
 }
 
 fn main() -> Result<()> {
@@ -48,9 +40,7 @@ fn go(p: &Path, connect_all: bool) -> Result<i64> {
         let xyz = (x.parse()?, y.parse()?, z.parse()?);
         boxes.push(JunctionBox {
             pos: xyz,
-            circuit: Rc::new(RefCell::new(Circuit { 
-                box_ids: vec![i],
-            })),
+            circuit: i,
         });
     }
 
@@ -67,36 +57,39 @@ fn go(p: &Path, connect_all: bool) -> Result<i64> {
     // 10 for sample, 1000 for real input
     let connections_limit = if boxes.len() == 20 { 10 } else { 1000 };
 
-    for (connections_count, &(dist, i, j)) in dists.iter().enumerate() {
+    let mut merges = 0;
+
+    for (connections_count, &(_dist, i, j)) in dists.iter().enumerate() {
         if !connect_all && connections_count >= connections_limit {
             break;
         }
 
-        let mut circuit_i = Rc::clone(&boxes[i].circuit);
-        let mut circuit_j = Rc::clone(&boxes[j].circuit);
+        let circuit_i = boxes[i].circuit;
+        let circuit_j = boxes[j].circuit;
 
-        if Rc::ptr_eq(&circuit_i, &circuit_j) { continue; }
+        if circuit_i == circuit_j { continue; }
 
-            //eprintln!("circuit {} subsumes {}", circuit_i[0], circuit_j[0]);
-        if circuit_i.borrow().box_ids.len() < circuit_j.borrow().box_ids.len() {
-            mem::swap(&mut circuit_i, &mut circuit_j);
+        for b in &mut boxes {
+            if b.circuit == circuit_j {
+                b.circuit = circuit_i;
+            }
         }
 
-        circuit_i.borrow_mut().box_ids.extend_from_slice(&circuit_j.borrow().box_ids);
-        for &k in &circuit_j.borrow().box_ids {
-            boxes[k].circuit = Rc::clone(&circuit_i);
-        }
-
-        if connect_all && circuit_i.borrow().box_ids.len() == boxes.len() {
-            eprintln!("last boxes are {:?}; {:?}", boxes[i].pos, boxes[j].pos);
-            return Ok(boxes[i].pos.0 * boxes[j].pos.0);
+        if connect_all {
+            merges += 1;
+            if boxes.len() - merges <= 1 {
+                eprintln!("last boxes are {:?}; {:?}", boxes[i].pos, boxes[j].pos);
+                return Ok(boxes[i].pos.0 * boxes[j].pos.0);
+            }
         }
     }
 
-    let mut circuits = BTreeSet::new();
+    let mut circuits = BTreeMap::new();
     for b in &boxes {
-        circuits.insert((b.circuit.borrow().box_ids.len(), Rc::clone(&b.circuit)));
+        *circuits.entry(b.circuit).or_default() += 1;
     }
+    let mut circuit_sizes: Vec<_> = circuits.iter().map(|(_, &v)| v).collect();
+    circuit_sizes.sort();
 
-    Ok(circuits.iter().rev().take(3).map(|&(len, _)| len as i64).product())
+    Ok(circuit_sizes.iter().rev().take(3).product())
 }
