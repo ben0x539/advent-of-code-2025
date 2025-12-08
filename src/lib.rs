@@ -37,7 +37,6 @@ pub fn run<P, F1, F2>(p: P, part_1: F1, part_2: F2) -> Result<()>
             F2: for<'p> Fn(&'p Path) -> Result<i64> {
     let opt = <Opt as clap::Parser>::parse();
 
-    dbg!(&opt);
     let parts = opt.parts.unwrap_or(Parts::Both);
     let files = opt.files.unwrap_or(Files::Both);
 
