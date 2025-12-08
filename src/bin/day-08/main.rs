@@ -54,70 +54,42 @@ fn go(p: &Path, connect_all: bool) -> Result<i64> {
         });
     }
 
-    let mut connections = if connect_all {
-        Vec::new()
-     } else {
-        vec![false; boxes.len() * boxes.len()]
-     };
-        
-    let mut connections_count = 0;
+    let mut dists = Vec::new();
+
+    for i in 0..boxes.len() {
+        for j in i+1..boxes.len() {
+            dists.push((get_sqr_dist(boxes[i].pos, boxes[j].pos), i, j));
+        }
+    }
+
+    dists.sort();
 
     // 10 for sample, 1000 for real input
     let connections_limit = if boxes.len() == 20 { 10 } else { 1000 };
 
-    loop {
+    for (connections_count, &(dist, i, j)) in dists.iter().enumerate() {
         if !connect_all && connections_count >= connections_limit {
             break;
-        }
-
-        let mut closest: Option<(i64, usize, usize)> = None;
-
-        for i in 0..boxes.len() {
-            for j in i+1..boxes.len() {
-                let (a, b) = (&boxes[i], &boxes[j]);
-                if connect_all {
-                    if Rc::ptr_eq(&boxes[i].circuit, &boxes[j].circuit) {
-                        continue;
-                    }
-                } else {
-                    if connections[i*boxes.len()+j] {
-                        continue;
-                    }
-                }
-
-                let dist = get_sqr_dist(a.pos, b.pos);
-                //eprintln!("comparing {}:{:?} {}:{:?} -> {}", i, boxes[i], j, boxes[j], dist);
-                if closest.is_none() || closest.unwrap().0 > dist {
-                    closest = Some((dist, i, j));
-                }
-            }
-        }
-
-        let Some((dist, i, j)) = closest else { break; };
-        //eprintln!("connecting {:?} and {:?} at dist {}", boxes[i], boxes[j], dist);
-        if !connect_all {
-            connections[i*boxes.len()+j] = true;
-            connections_count += 1;
         }
 
         let mut circuit_i = Rc::clone(&boxes[i].circuit);
         let mut circuit_j = Rc::clone(&boxes[j].circuit);
 
-        if !Rc::ptr_eq(&circuit_i, &circuit_j) {
+        if Rc::ptr_eq(&circuit_i, &circuit_j) { continue; }
+
             //eprintln!("circuit {} subsumes {}", circuit_i[0], circuit_j[0]);
-            if circuit_i.borrow().box_ids.len() < circuit_j.borrow().box_ids.len() {
-                mem::swap(&mut circuit_i, &mut circuit_j);
-            }
+        if circuit_i.borrow().box_ids.len() < circuit_j.borrow().box_ids.len() {
+            mem::swap(&mut circuit_i, &mut circuit_j);
+        }
 
-            circuit_i.borrow_mut().box_ids.extend_from_slice(&circuit_j.borrow().box_ids);
-            for &k in &circuit_j.borrow().box_ids {
-                boxes[k].circuit = Rc::clone(&circuit_i);
-            }
+        circuit_i.borrow_mut().box_ids.extend_from_slice(&circuit_j.borrow().box_ids);
+        for &k in &circuit_j.borrow().box_ids {
+            boxes[k].circuit = Rc::clone(&circuit_i);
+        }
 
-            if connect_all && circuit_i.borrow().box_ids.len() == boxes.len() {
-                eprintln!("last boxes are {:?}; {:?}", boxes[i].pos, boxes[j].pos);
-                return Ok(boxes[i].pos.0 * boxes[j].pos.0);
-            }
+        if connect_all && circuit_i.borrow().box_ids.len() == boxes.len() {
+            eprintln!("last boxes are {:?}; {:?}", boxes[i].pos, boxes[j].pos);
+            return Ok(boxes[i].pos.0 * boxes[j].pos.0);
         }
     }
 
